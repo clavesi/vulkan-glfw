@@ -61,7 +61,10 @@ private:
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable window resizing
 
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-
+        
+        if (!window) {
+            throw std::runtime_error("Failed to create GLFW window!");
+        }
 	}
 
 	void initVulkan() {
@@ -108,6 +111,10 @@ private:
 		// A lot of info in Vulkan is passed through structs instead of function parameters
 		// This struct is not optional and tells the Vulkan driver which global extensions and validation layers to use
 		VkInstanceCreateInfo createInfo{};
+#ifdef __APPLE__
+        // ✅ Enable portability enumeration for MoltenVK on macOS
+        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
 
@@ -213,6 +220,10 @@ private:
 		if (enableValidationLayers) {
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
+#ifdef __APPLE__
+        // ✅ Add MoltenVK portability extension for macOS
+        extensions.push_back("VK_KHR_portability_enumeration");
+#endif
 
 		return extensions;
 	}

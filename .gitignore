@@ -361,3 +361,15 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Xcode build artifacts
+DerivedData/
+*.xcworkspace
+*.xcuserstate
+*.xcuserdatad
+*.lock
+build/
+*.dSYM
+
+# macOS system files
+.DS_Store

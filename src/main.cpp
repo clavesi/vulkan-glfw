@@ -4,8 +4,10 @@
 
 #include <iostream>
 #include <stdexcept>
-#include <cstdlib>
 #include <vector>
+#include <cstring>
+#include <cstdlib>
+#include <optional>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -40,6 +42,17 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 	}
 }
 
+struct QueueFamilyIndices {
+	// std::optional is a wrapper that can hold a value or nothing. it contains no value until you assign something to it.
+	// You can check if it contains a value with has_value() and get the value with value()
+	std::optional<uint32_t> graphicsFamily;
+
+	bool isComplete() {
+		return graphicsFamily.has_value();
+	}
+
+};
+
 class HelloTriangleApplication {
 public:
 	void run() {
@@ -54,6 +67,8 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
 
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
 	void initWindow() {
 		glfwInit();
 
@@ -61,15 +76,16 @@ private:
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable window resizing
 
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-        
-        if (!window) {
-            throw std::runtime_error("Failed to create GLFW window!");
-        }
+
+		if (!window) {
+			throw std::runtime_error("Failed to create GLFW window!");
+		}
 	}
 
 	void initVulkan() {
 		createInstance();
 		setupDebugMessenger();
+		pickPhysicalDevice();
 	}
 
 	void mainLoop() {
@@ -83,7 +99,7 @@ private:
 		if (enableValidationLayers) {
 			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
-		
+
 		vkDestroyInstance(instance, nullptr);
 
 		glfwDestroyWindow(window);
@@ -112,8 +128,8 @@ private:
 		// This struct is not optional and tells the Vulkan driver which global extensions and validation layers to use
 		VkInstanceCreateInfo createInfo{};
 #ifdef __APPLE__
-        // ✅ Enable portability enumeration for MoltenVK on macOS
-        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+		// ✅ Enable portability enumeration for MoltenVK on macOS
+		createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 #endif
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
@@ -151,7 +167,7 @@ private:
 			throw std::runtime_error("failed to create instance!");
 		}
 	}
-	
+
 	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
 		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 		// We can filter which severity types we want to receive messages for
@@ -180,6 +196,72 @@ private:
 		if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
 			throw std::runtime_error("failed to set up debug messenger!");
 		}
+	}
+
+	void pickPhysicalDevice() {
+		// Get the number of physical devices
+		uint32_t deviceCount = 0;
+		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+		if (deviceCount == 0) {
+			throw std::runtime_error("failed to find GPUs with Vulkan support!");
+		}
+
+		std::vector<VkPhysicalDevice> devices(deviceCount);
+		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+		for (const auto& device : devices) {
+			if (isDeviceSuitable(device)) {
+				physicalDevice = device;
+				break;
+			}
+		}
+
+		if (physicalDevice == VK_NULL_HANDLE) {
+			throw std::runtime_error("failed to find a suitable GPU!");
+		}
+	}
+
+	bool isDeviceSuitable(VkPhysicalDevice device) {
+		//// Get basic properties of the device
+		//VkPhysicalDeviceProperties deviceProperties;
+		//vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		//// Get optional features of the device (like texture compression, 64-bit floats, multi-viewport rendering, etc.)
+		//VkPhysicalDeviceFeatures deviceFeatures;
+		//vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		//return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceFeatures.geometryShader;
+
+		QueueFamilyIndices indices = findQueueFamilies(device);
+		return indices.isComplete();
+	}
+
+	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+		QueueFamilyIndices indices;
+
+		// Get list of queue families and their properties
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+		// queueFamilies stores the structs with the properties of each queue family,
+		// including the type of operations that are supported and the number of queues that can be created based on it
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+		// Find a queue family that supports VK_QUEUE_GRAPHICS_BIT
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies) {
+			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+				indices.graphicsFamily = i;
+			}
+
+			if (indices.isComplete()) {
+				break;
+			}
+
+			i++;
+		}
+
+		return indices;
 	}
 
 	bool checkValidationLayerSupport() {
@@ -221,8 +303,8 @@ private:
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
 #ifdef __APPLE__
-        // ✅ Add MoltenVK portability extension for macOS
-        extensions.push_back("VK_KHR_portability_enumeration");
+		// ✅ Add MoltenVK portability extension for macOS
+		extensions.push_back("VK_KHR_portability_enumeration");
 #endif
 
 		return extensions;

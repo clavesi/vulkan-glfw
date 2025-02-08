@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <set>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -46,9 +47,11 @@ struct QueueFamilyIndices {
 	// std::optional is a wrapper that can hold a value or nothing. it contains no value until you assign something to it.
 	// You can check if it contains a value with has_value() and get the value with value()
 	std::optional<uint32_t> graphicsFamily;
+	// We have to check for a distinct present queue family because the graphics queue family may not support presentation
+	std::optional<uint32_t> presentFamily;
 
 	bool isComplete() {
-		return graphicsFamily.has_value();
+		return graphicsFamily.has_value() && presentFamily.has_value();
 	}
 
 };
@@ -67,9 +70,13 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
 
+	VkSurfaceKHR surface;
+
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
+
 	VkQueue graphicsQueue;
+	VkQueue presentQueue;
 
 	void initWindow() {
 		glfwInit();
@@ -87,6 +94,7 @@ private:
 	void initVulkan() {
 		createInstance();
 		setupDebugMessenger();
+		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
 	}
@@ -104,6 +112,8 @@ private:
 		if (enableValidationLayers) {
 			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
+
+		vkDestroySurfaceKHR(instance, surface, nullptr);
 
 		vkDestroyInstance(instance, nullptr);
 
@@ -203,6 +213,14 @@ private:
 		}
 	}
 
+	void createSurface() {
+		// glfwCreateWindowSurface is a platform agnostic function that creates a surface for Vulkan to interface with the window system
+		// Thus, we don't need to worry about platform specific code
+		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create window surface!");
+		}
+	}
+
 	void pickPhysicalDevice() {
 		// Get the number of physical devices
 		uint32_t deviceCount = 0;
@@ -230,16 +248,21 @@ private:
 	void createLogicalDevice() {
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-		// Get queue with graphics capabilities
-		VkDeviceQueueCreateInfo queueCreateInfo{};
-		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-		// Only need one queue since we can create all of the command buffers on multiple threads and then submit them all at once on the main thread
-		queueCreateInfo.queueCount = 1;
+		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+		std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
-		// The priority of the queue (from 0.0 to 1.0)
 		float queuePriority = 1.0f;
-		queueCreateInfo.pQueuePriorities = &queuePriority;
+		// Create a queue for each unique queue family
+		for (uint32_t queueFamily : uniqueQueueFamilies) {
+			VkDeviceQueueCreateInfo queueCreateInfo{};
+			queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			queueCreateInfo.queueFamilyIndex = queueFamily;
+			// Only need one queue since we can create all of the command buffers on multiple threads and then submit them all at once on the main thread
+			queueCreateInfo.queueCount = 1;
+			// The priority of the queue (from 0.0 to 1.0)
+			queueCreateInfo.pQueuePriorities = &queuePriority;
+			queueCreateInfos.push_back(queueCreateInfo);
+		}
 
 		// Specify the set of device features that we'll be using
 		VkPhysicalDeviceFeatures deviceFeatures{};
@@ -247,8 +270,10 @@ private:
 		// Create the logical device
 		VkDeviceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		createInfo.pQueueCreateInfos = &queueCreateInfo;
-		createInfo.queueCreateInfoCount = 1;
+
+		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+		createInfo.pQueueCreateInfos = queueCreateInfos.data();
+
 		createInfo.pEnabledFeatures = &deviceFeatures;
 
 		// Modern Vulkan doesn't make a distinction between instance and device specific validation layers
@@ -269,6 +294,7 @@ private:
 
 		// Retrieve the handle of the queue that was created along with the logical device
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 	}
 
 	bool isDeviceSuitable(VkPhysicalDevice device) {
@@ -301,6 +327,15 @@ private:
 		for (const auto& queueFamily : queueFamilies) {
 			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
 				indices.graphicsFamily = i;
+			}
+
+			// Look for a queue family that has the capability of presenting to our window surface
+			// This could be the same queue as the one that supports graphics operations, but it could also be different
+			// Therefore, we will treat them as distinct queue families
+			VkBool32 presentSupport = false;
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+			if (presentSupport) {
+				indices.presentFamily = i;
 			}
 
 			if (indices.isComplete()) {

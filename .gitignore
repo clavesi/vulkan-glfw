@@ -97,6 +97,7 @@ StyleCopReport.xml
 *.pidb
 *.svclog
 *.scc
+*.vcxproj.filters
 
 # Chutzpah Test files
 _Chutzpah*
@@ -370,6 +371,7 @@ DerivedData/
 *.lock
 build/
 *.dSYM
+xcshareddata/
 
 # macOS system files
 .DS_Store
